@@ -87,6 +87,24 @@ pub(super) fn execute_sha256u(engine: &mut Engine) -> Failure {
         .err()
 }
 
+pub(super) fn execute_vergrth16(engine: &mut Engine) -> Failure {
+    engine.load_instruction(Instruction::new("VERGRTH16"))
+        .and_then(|ctx| fetch_stack(ctx, 1))
+        .and_then(|ctx| {
+            let slice = ctx.engine.cmd.var(0).as_slice()?;
+            if slice.remaining_bits() % 8 == 0 {
+                let mut hasher = sha2::Sha256::new();
+                hasher.input(slice.get_bytestring(0));
+                let hash_int = hash_to_uint(hasher.result());
+                ctx.engine.cc.stack.push(StackItem::Integer(hash_int));
+                Ok(ctx)
+            }else {
+                err!(ExceptionCode::CellUnderflow)
+            }
+        })
+        .err()
+}
+
 //CHKSIGNS(d s k–?)
 // checks whethersis a valid Ed25519-signature of the data portion of Slice d using public key k,
 // similarly to CHKSIGNU. If the bit length of Slice d is not divisible by eight, 
