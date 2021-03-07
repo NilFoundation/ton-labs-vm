@@ -26,6 +26,7 @@ use crate::{
     },
     types::{Exception, Failure}
 };
+use crusty3_zk::create_random_proof;
 use sha2::Digest;
 use ed25519::signature::{Signature, Verifier};
 use std::sync::Arc;
