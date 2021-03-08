@@ -77,6 +77,10 @@ pub enum StackItem {
 
 impl StackItem {
 
+    pub const fn default() -> Self {
+        StackItem::None
+    }
+
     /// Returns integer not equal to zero
     /// Checks type and NaN
     pub fn as_bool(&self) -> Result<bool> {
@@ -203,6 +207,13 @@ impl StackItem {
         Stack::eq_item(self, &StackItem::None)
     }
 
+    pub fn is_slice(&self) -> bool {
+        match self {
+            StackItem::Slice(_) => true,
+            _ => false
+        }
+    }
+
     pub fn withdraw(&mut self) -> StackItem {
         mem::replace(self, StackItem::None)
     }
@@ -306,7 +317,7 @@ pub struct Stack {
 
 impl Stack {
 
-    pub fn new() -> Stack {
+    pub const fn new() -> Self {
         Stack {
             storage: Vec::new(),
         }
@@ -524,7 +535,7 @@ impl PartialEq for Stack {
 
 impl fmt::Display for Stack {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&self.storage.iter().fold(String::default(), |acc, item| format!("{}{}\n", acc, item)))
+        f.write_str(&self.storage.iter().fold(String::new(), |acc, item| format!("{}{}\n", acc, item)))
     }
 }
 
