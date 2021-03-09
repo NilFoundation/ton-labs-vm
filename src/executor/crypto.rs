@@ -30,6 +30,7 @@ use sha2::Digest;
 use ed25519::signature::{Signature, Verifier};
 use std::sync::Arc;
 use ton_types::{BuilderData, error, GasConsumer, types::ExceptionCode};
+use crusty3_zk::groth16::verify_proof;
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
 const SIGNATURE_BITS:   usize = SIGNATURE_BYTES * 8;
@@ -91,14 +92,13 @@ pub(super) fn execute_vergrth16(engine: &mut Engine) -> Failure {
     engine.load_instruction(Instruction::new("VERGRTH16"))
         .and_then(|ctx| fetch_stack(ctx, 1))
         .and_then(|ctx| {
-            let slice = ctx.engine.cmd.var(0).as_slice()?;
-            if slice.remaining_bits() % 8 == 0 {
-                let mut hasher = sha2::Sha256::new();
-                hasher.input(slice.get_bytestring(0));
-                let hash_int = hash_to_uint(hasher.result());
-                ctx.engine.cc.stack.push(StackItem::Integer(hash_int));
+            let builder = BuilderData::from(ctx.engine.cmd.var(0).as_cell()?);
+            let data = builder.data();
+            if builder.length_in_bits() % 8 == 0 {
+                //let result = verify_proof();
+                //ctx.engine.cc.stack.push(boolean!(result));
                 Ok(ctx)
-            }else {
+            } else {
                 err!(ExceptionCode::CellUnderflow)
             }
         })
