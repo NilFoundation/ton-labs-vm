@@ -30,7 +30,11 @@ use sha2::Digest;
 use ed25519::signature::{Signature, Verifier};
 use std::sync::Arc;
 use ton_types::{BuilderData, error, GasConsumer, types::ExceptionCode};
-use crusty3_zk::groth16::verify_proof;
+
+use crusty3_zk::{groth16::{verify_proof, prepare_verifying_key, Parameters},
+                 bls::{Bls12, Fr}
+                };
+
 
 const PUBLIC_KEY_BITS:  usize = PUBLIC_KEY_BYTES * 8;
 const SIGNATURE_BITS:   usize = SIGNATURE_BYTES * 8;
@@ -93,10 +97,21 @@ pub(super) fn execute_vergrth16(engine: &mut Engine) -> Failure {
         .and_then(|ctx| fetch_stack(ctx, 1))
         .and_then(|ctx| {
             let builder = BuilderData::from(ctx.engine.cmd.var(0).as_cell()?);
-            let data = builder.data();
-            if builder.length_in_bits() % 8 == 0 {
+            let cell_proof_data_length = builder.length_in_bits()?;
+            //let data = builder.data();
+            let cell_proof = ctx.engine.finalize_cell(builder)?;
+            let cell_proof_data = cell_proof.data();
+            if cell_proof_data_length % 8 == 0 {
+
+                let de_params = Parameters::read(&cell_proof_data[..], true).unwrap();
+
+                let pvk = prepare_verifying_key::<Bls12>(&de_params.vk);
+
+                //let de_proof = Proof::read(&v[..]).unwrap();
+
                 //let result = verify_proof();
-                //ctx.engine.cc.stack.push(boolean!(result));
+                let result = true;
+                ctx.engine.cc.stack.push(boolean!(result));
                 Ok(ctx)
             } else {
                 err!(ExceptionCode::CellUnderflow)
