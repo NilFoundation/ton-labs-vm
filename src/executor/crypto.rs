@@ -97,7 +97,7 @@ pub(super) fn execute_vergrth16(engine: &mut Engine) -> Failure {
         .and_then(|ctx| fetch_stack(ctx, 1))
         .and_then(|ctx| {
             let builder = BuilderData::from(ctx.engine.cmd.var(0).as_cell()?);
-            let cell_proof_data_length = builder.length_in_bits()?;
+            let cell_proof_data_length = builder.length_in_bits();
             //let data = builder.data();
             let cell_proof = ctx.engine.finalize_cell(builder)?;
             let cell_proof_data = cell_proof.data();
