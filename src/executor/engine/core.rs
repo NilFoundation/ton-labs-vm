@@ -138,6 +138,7 @@ impl GasConsumer for Engine {
 }
 
 impl Engine {
+    pub const TRACE_NONE:  u8 = 0x00;
     pub const TRACE_CODE:  u8 = 0x01;
     pub const TRACE_GAS:   u8 = 0x02;
     pub const TRACE_STACK: u8 = 0x04;
@@ -148,6 +149,25 @@ impl Engine {
     // External API ***********************************************************
 
     pub fn new() -> Engine {
+        let trace = if cfg!(feature="fift_check") {
+            Engine::TRACE_ALL_BUT_CTRLS
+        } else if cfg!(feature="verbose") {
+            Engine::TRACE_ALL
+        } else {
+            Engine::TRACE_NONE
+        };
+        let log_enabled = log::log_enabled!(target: "tvm", log::Level::Debug)
+            || log::log_enabled!(target: "tvm", log::Level::Trace)
+            || log::log_enabled!(target: "tvm", log::Level::Info)
+            || log::log_enabled!(target: "tvm", log::Level::Error)
+            || log::log_enabled!(target: "tvm", log::Level::Warn);
+        let trace_callback: Option<Box<dyn Fn(&Engine, &EngineTraceInfo)>> = if !log_enabled {
+            None
+        } else if cfg!(feature="fift_check") {
+            Some(Box::new(Self::fift_trace_callback))
+        } else {
+            Some(Box::new(Self::defaul_trace_callback))
+        };
         Engine {
             cc: ContinuationData::new_empty(),
             cmd: Instruction::new("NOP"),
@@ -163,16 +183,8 @@ impl Engine {
             step: 0,
             debug_buffer: String::new(),
             cmd_code: SliceData::default(),
-            #[cfg(not(all(feature="verbose", feature="fift_check")))]
-            trace: Engine::TRACE_ALL,
-            #[cfg(all(feature="verbose", feature="fift_check"))]
-            trace: Engine::TRACE_ALL_BUT_CTRLS,
-            #[cfg(not(feature="verbose"))]
-            trace_callback: None,
-            #[cfg(all(feature="verbose", not(feature="fift_check")))]
-            trace_callback: Some(Box::new(Self::defaul_trace_callback)),
-            #[cfg(all(feature="verbose", feature="fift_check"))]
-            trace_callback: Some(Box::new(Self::fift_trace_callback)),
+            trace,
+            trace_callback,
             log_string: None,
         }
     }
@@ -251,7 +263,6 @@ impl Engine {
         }
     }
 
-    #[allow(dead_code)]
     fn defaul_trace_callback(&self, info: &EngineTraceInfo) {
         if self.trace_bit(Engine::TRACE_CODE) && info.has_cmd() {
             log::trace!(
@@ -275,6 +286,9 @@ impl Engine {
         }
         if self.trace_bit(Engine::TRACE_CTRLS) {
             log::trace!(target: "tvm", "{}", self.dump_ctrls(true));
+        }
+        if info.info_type == EngineTraceInfoType::Dump {
+            log::info!(target: "tvm", "{}", info.cmd_str);
         }
     }
 
@@ -679,9 +693,14 @@ impl Engine {
     pub(in crate::executor) fn flush(&mut self) {
         if self.debug_on > 0 {
             let buffer = std::mem::replace(&mut self.debug_buffer, String::new());
-            self.trace_info(EngineTraceInfoType::Dump, 0, Some(buffer));
+            if self.trace_callback.is_none() {
+                log::info!(target: "tvm", "{}", buffer);
+            } else {
+                self.trace_info(EngineTraceInfoType::Dump, 0, Some(buffer));
+            }
+        } else {
+            self.debug_buffer = String::new()
         }
-        self.debug_buffer = String::new()
     }
 
     ///Get gas state
@@ -1107,9 +1126,9 @@ impl Engine {
         let mut t1 = tuple.first_mut().ok_or(ExceptionCode::RangeCheckError)?.as_tuple_mut()?;
         *t1.get_mut(6).ok_or(ExceptionCode::RangeCheckError)? = StackItem::Integer(Arc::new(rand));
         self.use_gas(Gas::tuple_gas_price(t1.len()));
-        *tuple.first_mut().ok_or(ExceptionCode::RangeCheckError)? = StackItem::Tuple(t1);
+        *tuple.first_mut().ok_or(ExceptionCode::RangeCheckError)? = StackItem::tuple(t1);
         self.use_gas(Gas::tuple_gas_price(tuple.len()));
-        *self.ctrl_mut(7)? = StackItem::Tuple(tuple);
+        *self.ctrl_mut(7)? = StackItem::tuple(tuple);
         Ok(())
     }
 

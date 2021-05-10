@@ -16,7 +16,7 @@ use crate::{
     types::{Exception, ResultMut, ResultOpt, ResultRef, ResultVec, Status}
 };
 use std::{fmt, mem, ops::Range, slice::Iter, sync::Arc};
-use ton_types::{BuilderData, Cell, CellType, error, SliceData, Result, types::ExceptionCode};
+use ton_types::{BuilderData, Cell, CellType, error, SliceData, Result, ExceptionCode, HashmapType};
 
 pub mod serialization;
 pub mod savelist;
@@ -27,7 +27,7 @@ pub mod integer;
 #[macro_export]
 macro_rules! int {
     (nan) => {
-        StackItem::Integer(Arc::new(IntegerData::nan()));
+        StackItem::nan()
     };
     ($value: expr) => {
         StackItem::Integer(Arc::new(IntegerData::from($value).unwrap()))
@@ -51,19 +51,6 @@ macro_rules! boolean {
     };
 }
 
-#[macro_export]
-macro_rules! dict {
-    (empty) => {
-        StackItem::None
-    };
-    ($dict: ident) => {{
-        match $dict.data() {
-            Some(cell) => StackItem::Cell(cell.clone()),
-            None => StackItem::None
-        }
-    }};
-}
-
 #[derive(Debug, PartialEq)]
 pub enum StackItem {
     None,
@@ -72,13 +59,70 @@ pub enum StackItem {
     Continuation(Arc<ContinuationData>),
     Integer(Arc<IntegerData>),
     Slice(SliceData),
-    Tuple(Vec<StackItem>)
+    Tuple(Arc<Vec<StackItem>>)
 }
 
 impl StackItem {
 
+    /// new default stack item
     pub const fn default() -> Self {
         StackItem::None
+    }
+
+    /// new stack item as builder
+    pub fn builder(builder: BuilderData) -> Self {
+        StackItem::Builder(Arc::new(builder))
+    }
+
+    /// new stack item as cell
+    pub fn cell(cell: Cell) -> Self {
+        StackItem::Cell(cell)
+    }
+
+    /// new stack item as cell
+    pub fn dict(dict: &impl HashmapType) -> Self {
+        match dict.data() {
+            Some(root) => StackItem::Cell(root.clone()),
+            None => StackItem::None
+        }
+    }
+
+    /// new stack item as continuation
+    pub fn continuation(continuation: ContinuationData) -> Self {
+        StackItem::Continuation(Arc::new(continuation))
+    }
+
+    /// new stack item as integer
+    pub fn int(integer: impl Into<IntegerData>) -> Self {
+        StackItem::Integer(Arc::new(integer.into()))
+    }
+
+    /// new stack item as integer with internal data
+    pub fn integer(integer: IntegerData) -> Self {
+        StackItem::Integer(Arc::new(integer))
+    }
+
+    /// new stack item as integer not a number
+    pub fn nan() -> Self {
+        StackItem::Integer(Arc::new(IntegerData::nan()))
+    }
+
+    /// new stack item as bool
+    pub fn boolean(boolean: bool) -> Self {
+        match boolean {
+            true => StackItem::Integer(Arc::new(IntegerData::minus_one())),
+            false => StackItem::Integer(Arc::new(IntegerData::zero())),
+        }
+    }
+
+    /// new stack item as slice
+    pub fn slice(slice: SliceData) -> Self {
+        StackItem::Slice(slice)
+    }
+
+    /// new stack item as tuple
+    pub fn tuple(tuple: Vec<StackItem>) -> Self {
+        StackItem::Tuple(Arc::new(tuple))
     }
 
     /// Returns integer not equal to zero
@@ -193,7 +237,9 @@ impl StackItem {
     pub fn as_tuple_mut(&mut self) -> ResultVec<StackItem> {
         self.as_tuple()?;
         match self.withdraw() {
-            StackItem::Tuple(data) => Ok(data),
+            StackItem::Tuple(arc) => {
+                Ok(Arc::try_unwrap(arc).unwrap_or_else(|arc| arc.as_ref().clone()))
+            }
             _ => err!(ExceptionCode::TypeCheckError)
         }
     }
@@ -406,7 +452,7 @@ impl Stack {
     }
     /// pushes a vector as tuple
     pub fn push_tuple(&mut self, items: Vec<StackItem>) -> &mut Stack {
-        self.storage.push(StackItem::Tuple(items));
+        self.storage.push(StackItem::tuple(items));
         self
     }
 

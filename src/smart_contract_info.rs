@@ -56,7 +56,7 @@ impl Default for SmartContractInfo {
             rand_seed: IntegerData::zero(),
             balance_remaining_grams: 0,
             balance_remaining_other: HashmapE::with_bit_len(32),
-            myself: SliceData::new(vec!(0x20)),
+            myself: SliceData::default(),
             config_params: None
         }
     }
@@ -145,8 +145,8 @@ impl SmartContractInfo{
     }
 
     pub fn into_temp_data(&self) -> StackItem {
-        StackItem::Tuple(vec![
-            StackItem::Tuple(vec![
+        StackItem::tuple(vec![
+            StackItem::tuple(vec![
                 int!(0x076ef1ea),      // magic
                 int!(self.actions),    // actions
                 int!(self.msgs_sent),  // msgs
@@ -154,7 +154,7 @@ impl SmartContractInfo{
                 int!(self.block_lt),   // logical time
                 int!(self.trans_lt),   // transaction time
                 StackItem::Integer(Arc::new(self.rand_seed.clone())),
-                StackItem::Tuple(vec![
+                StackItem::tuple(vec![
                     int!(self.balance_remaining_grams),
                     self.balance_remaining_other.data()
                     .map(|dict| StackItem::Cell(dict.clone()))

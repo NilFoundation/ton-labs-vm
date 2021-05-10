@@ -31,7 +31,7 @@ use crate::{
     types::{Exception, Failure}
 };
 use ton_types::{
-    BuilderData, error, fail, GasConsumer, HashmapE, HashmapType, HashmapSubtree, PfxHashmapE, Result, SliceData,
+    BuilderData, error, fail, GasConsumer, HashmapE, HashmapSubtree, PfxHashmapE, Result, SliceData,
     types::ExceptionCode
 };
 use std::sync::Arc;
@@ -101,7 +101,7 @@ fn dict(
         } else {
             let val = handler(&mut ctx, &mut dict, key)?;
             if how.any(SET | DEL) {
-                ctx.engine.cc.stack.push(dict!(dict));
+                ctx.engine.cc.stack.push(StackItem::dict(&dict));
             }
             match val {
                 None => if how.bit(RET) {
@@ -203,7 +203,7 @@ fn find(
         if let Some((key, value)) = finder(&mut ctx, &dict, how)? {
             if how.bit(DEL) {
                 dict.remove_with_gas(SliceData::from(&key), ctx.engine)?;
-                ctx.engine.cc.stack.push(dict!(dict));
+                ctx.engine.cc.stack.push(StackItem::dict(&dict));
             }
             ctx.engine.cc.stack.push(value);
             let key = write_key(&mut ctx, key, how)?;
@@ -211,7 +211,7 @@ fn find(
             ctx.engine.cc.stack.push(boolean!(true));
         } else {
             if how.bit(DEL) {
-                ctx.engine.cc.stack.push(dict!(dict));
+                ctx.engine.cc.stack.push(StackItem::dict(&dict));
             }
             ctx.engine.cc.stack.push(boolean!(false));
         }
@@ -261,7 +261,7 @@ fn pfxdictset(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
                 }
             }
         };
-        ctx.engine.cc.stack.push(dict!(dict));
+        ctx.engine.cc.stack.push(StackItem::dict(&dict));
         ctx.engine.cc.stack.push(boolean!(key_valid));
         Ok(ctx)
     })
@@ -342,7 +342,7 @@ fn keyreader_from_int(key: &StackItem, nbits: usize) -> Result<SliceData> {
     if key.is_nan() {
         return err!(ExceptionCode::IntegerOverflow);
     }
-    key.into_builder::<SignedIntegerBigEndianEncoding>(nbits).map(|builder| builder.into())
+    key.into_slice::<SignedIntegerBigEndianEncoding>(nbits)
 }
 
 fn keyreader_from_uint(key: &StackItem, nbits: usize) -> Result<SliceData> {
@@ -350,7 +350,7 @@ fn keyreader_from_uint(key: &StackItem, nbits: usize) -> Result<SliceData> {
     if key.is_nan() || key.is_neg() {
         return err!(ExceptionCode::IntegerOverflow);
     }
-    key.into_builder::<UnsignedIntegerBigEndianEncoding>(nbits).map(|builder| builder.into())
+    key.into_slice::<UnsignedIntegerBigEndianEncoding>(nbits)
 }
 
 fn read_key(key: &StackItem, nbits: usize, how: u8) -> Result<(Option<SliceData>, bool)> {
@@ -389,16 +389,16 @@ fn valreader_from_refopt(ctx: &mut Ctx, dict: &mut HashmapE, key: SliceData) -> 
 }
 
 fn valwriter_add_slice(ctx: &mut Ctx, dict: &mut HashmapE, key: SliceData) -> Result<Option<StackItem>> {
-    let new_val = ctx.engine.cmd.var(3).as_slice()?.clone();
-    match dict.add_with_gas(key.clone(), &new_val, ctx.engine)? {
+    let new_val = ctx.engine.cmd.var_mut(3).withdraw();
+    match dict.add_with_gas(key.clone(), new_val.as_slice()?, ctx.engine)? {
         Some(val) => Ok(Some(StackItem::Slice(val))),
         None => Ok(None),
     }
 }
 
 fn valwriter_add_builder(ctx: &mut Ctx, dict: &mut HashmapE, key: SliceData) -> Result<Option<StackItem>> {
-    let new_val = ctx.engine.cmd.var(3).as_builder()?.into();
-    match dict.add_with_gas(key.clone(), &new_val, ctx.engine)? {
+    let new_val = ctx.engine.cmd.var_mut(3).withdraw();
+    match dict.add_builder_with_gas(key.clone(), new_val.as_builder()?, ctx.engine)? {
         Some(val) => Ok(Some(StackItem::Slice(val))),
         None => Ok(None),
     }
@@ -448,8 +448,8 @@ fn valwriter_replace_slice(
     dict: &mut HashmapE,
     key: SliceData
 ) -> Result<Option<StackItem>> {
-    let val = ctx.engine.cmd.var(3).as_slice()?.clone();
-    match dict.replace_with_gas(key, &val, ctx.engine)? {
+    let val = ctx.engine.cmd.var_mut(3).withdraw();
+    match dict.replace_with_gas(key, val.as_slice()?, ctx.engine)? {
         Some(val) => Ok(Some(StackItem::Slice(val))),
         None => Ok(None)
     }
@@ -460,8 +460,8 @@ fn valwriter_replace_builder(
     dict: &mut HashmapE,
     key: SliceData
 ) -> Result<Option<StackItem>> {
-    let val = ctx.engine.cmd.var(3).as_builder()?.into();
-    match dict.replace_with_gas(key, &val, ctx.engine)? {
+    let val = ctx.engine.cmd.var_mut(3).withdraw();
+    match dict.replace_builder_with_gas(key, val.as_builder()?, ctx.engine)? {
         Some(val) => Ok(Some(StackItem::Slice(val))),
         None => Ok(None)
     }
@@ -484,8 +484,8 @@ fn valwriter_to_slice(
     dict: &mut HashmapE,
     key: SliceData
 ) -> Result<Option<StackItem>> {
-    let val = ctx.engine.cmd.var(3).as_slice()?.clone();
-    Ok(dict.set_with_gas(key, &val, ctx.engine)?.map(|val| StackItem::Slice(val)))
+    let val = ctx.engine.cmd.var_mut(3).withdraw();
+    Ok(dict.set_with_gas(key, val.as_slice()?, ctx.engine)?.map(|val| StackItem::Slice(val)))
 }
 
 fn valwriter_to_builder(
@@ -493,8 +493,8 @@ fn valwriter_to_builder(
     dict: &mut HashmapE,
     key: SliceData
 ) -> Result<Option<StackItem>> {
-    let val = ctx.engine.cmd.var(3).as_builder()?.into();
-    Ok(dict.set_with_gas(key, &val, ctx.engine)?.map(|val| StackItem::Slice(val)))
+    let val = ctx.engine.cmd.var_mut(3).withdraw();
+    Ok(dict.set_builder_with_gas(key, val.as_builder()?, ctx.engine)?.map(|val| StackItem::Slice(val)))
 }
 
 fn valwriter_to_ref(
@@ -1272,7 +1272,7 @@ fn subdict(engine: &mut Engine, name: &'static str, keyreader: KeyReader, into: 
         let lbits = ctx.engine.cmd.var(2).as_integer()?.into(0..=nbits)?;
         let key = keyreader(ctx.engine.cmd.var(3), lbits)?;
         into(&mut dict, &key, ctx.engine)?;
-        ctx.engine.cc.stack.push(dict!(dict));
+        ctx.engine.cc.stack.push(StackItem::dict(&dict));
         Ok(ctx)
     })
     .err()
