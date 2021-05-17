@@ -103,9 +103,12 @@ pub(super) fn execute_vergrth16(engine: &mut Engine) -> Failure {
             let cell_proof_data = cell_proof.data();
             if cell_proof_data_length % 8 == 0 {
 
-                let de_params = Parameters::read(&cell_proof_data[..], true).unwrap();
+                println!("Vector size: {}", cell_proof_data.len());
+                println!("{:02x?}", cell_proof_data);
 
-                let pvk = prepare_verifying_key::<Bls12>(&de_params.vk);
+                //let de_params = Parameters::read(&cell_proof_data[..], true).unwrap();
+
+                //let pvk = prepare_verifying_key::<Bls12>(&de_params.vk);
 
                 //let de_proof = Proof::read(&v[..]).unwrap();
 
