@@ -103,7 +103,7 @@ pub(super) fn execute_vergrth16(engine: &mut Engine) -> Failure {
             let cell_proof_data = cell_proof.data();
             if cell_proof_data_length % 8 == 0 {
 
-                let result = verify_groth16_proof_from_byteblob(cell_proof_data);
+                let result = verify_groth16_proof_from_byteblob::<Bls12>(&cell_proof_data[..]).unwrap();
 
                 ctx.engine.cc.stack.push(boolean!(result.unwrap()));
                 Ok(ctx)
