@@ -105,7 +105,7 @@ pub(super) fn execute_vergrth16(engine: &mut Engine) -> Failure {
 
                 let result = verify_groth16_proof_from_byteblob::<Bls12>(&cell_proof_data[..]).unwrap();
 
-                ctx.engine.cc.stack.push(boolean!(result.unwrap()));
+                ctx.engine.cc.stack.push(boolean!(result));
                 Ok(ctx)
             } else {
                 err!(ExceptionCode::CellUnderflow)
