@@ -1201,11 +1201,15 @@ fn load_dict(engine: &mut Engine, name: &'static str, how: u8) -> Failure {
     .and_then(|ctx| fetch_stack(ctx, 1))
     .and_then(|ctx| {
         let mut slice = ctx.engine.cmd.var(0).as_slice()?.clone();
-        let empty = if let dict = slice.get_dictionary() {
+        let empty = if let Some(dict) = slice.get_dictionary_opt() {
             if how.bit(SLC) {
-                ctx.engine.cc.stack.push(StackItem::Slice(dict.unwrap()));
+                ctx.engine.cc.stack.push(StackItem::Slice(dict.clone()));
             } else if how.bit(DICT) {
-                ctx.engine.cc.stack.push(StackItem::Cell(dict.unwrap().reference(0)?));
+                ctx.engine.cc.stack.push(if dict.is_empty_root() {
+                    StackItem::None
+                } else {
+                    StackItem::Cell(dict.reference(0)?)
+                });
             }
             false
         } else {
