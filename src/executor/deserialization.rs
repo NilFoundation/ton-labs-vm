@@ -12,13 +12,14 @@
 */
 
 use crate::{
-    error::TvmError, 
+    error::TvmError,
     executor::{
         Mask, engine::{Engine, data::convert, storage::fetch_stack}, 
         microcode::{SLICE, CELL, VAR}, types::{Ctx, InstructionOptions, Instruction}
     },
     stack::{
         StackItem,
+        continuation::ContinuationData,
         integer::{
             IntegerData, 
             serialization::{
@@ -31,7 +32,7 @@ use crate::{
     types::{Exception, Failure}
 };
 use ton_types::{
-    BuilderData, Cell, CellType, error, GasConsumer, Result, SliceData, types::{ExceptionCode, UInt256}
+    Cell, CellType, error, GasConsumer, Result, SliceData, ExceptionCode, UInt256
 };
 use std::{collections::HashSet, sync::Arc};
 
@@ -348,15 +349,13 @@ pub fn execute_plduz(engine: &mut Engine) -> Failure {
         let l = 32 * ctx.engine.cmd.length();
         let slice = ctx.engine.cmd.var(0).as_slice()?.clone();
         let n = slice.remaining_bits();
-        let mut data = slice.clone().get_next_slice(std::cmp::min(n, l))?;
+        let mut data = slice.clone().get_next_slice(std::cmp::min(n, l))?.get_bytestring(0);
         if n < l {
             let r = l - n;
-            let mut builder = BuilderData::from_slice(&data);
-            builder.append_raw(vec![0; 1 + r / 8].as_slice(), r).unwrap();
-            data = builder.into();
+            data.extend_from_slice(&vec![0; r / 8]);
         }
         let encoder = UnsignedIntegerBigEndianEncoding::new(l);
-        let value = encoder.deserialize(&data.get_bytestring(0));
+        let value = encoder.deserialize(&data);
         ctx.engine.cc.stack.push(StackItem::Slice(slice));
         ctx.engine.cc.stack.push(StackItem::Integer(Arc::new(value)));
         Ok(ctx)
@@ -1013,4 +1012,19 @@ pub(crate) fn execute_sdatasize(engine: &mut Engine) -> Failure {
 
 pub(crate) fn execute_sdatasizeq(engine: &mut Engine) -> Failure {
     datasize(engine, "SDATASIZEQ", QUIET)
+}
+
+/// LDCONT (slice - cont slice')
+pub fn execute_ldcont(engine: &mut Engine) -> Failure {
+    engine.load_instruction(Instruction::new("LDCONT"))
+    .and_then(|ctx| fetch_stack(ctx, 1))
+    .and_then(|ctx| {
+        let mut slice = ctx.engine.cmd.var(0).as_slice()?.clone();
+        let (cont, gas) = ContinuationData::deserialize(&mut slice)?;
+        ctx.engine.use_gas(gas);
+        ctx.engine.cc.stack.push_cont(cont);
+        ctx.engine.cc.stack.push(StackItem::Slice(slice));
+        Ok(ctx)
+    })
+    .err()
 }

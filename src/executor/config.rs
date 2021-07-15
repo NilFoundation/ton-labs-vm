@@ -26,7 +26,7 @@ fn execute_config_param(engine: &mut Engine, name: &'static str, opt: bool) -> F
         let params = HashmapE::with_hashmap(32, ctx.engine.config_param(9)?.as_dict()?.cloned());
         let mut key = BuilderData::new();
         key.append_i32(index)?;
-        if let Some(value) = params.get_with_gas(key.into(), ctx.engine)? {
+        if let Some(value) = params.get_with_gas(key.into_cell()?.into(), ctx.engine)? {
             if let Some(value) = value.reference_opt(0) {
                 ctx.engine.cc.stack.push(StackItem::Cell(value.clone()));
                 if !opt {
@@ -121,4 +121,9 @@ pub(super) fn execute_my_code(engine: &mut Engine) -> Failure {
 // - x
 pub(super) fn execute_randseed(engine: &mut Engine) -> Failure {
     extract_config(engine, "RANDSEED")
+}
+
+// - integer | none
+pub(super) fn execute_init_code_hash(engine: &mut Engine) -> Failure {
+    extract_config(engine, "INITCODEHASH")
 }

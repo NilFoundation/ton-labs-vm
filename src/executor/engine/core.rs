@@ -126,7 +126,9 @@ impl CommittedState {
 impl GasConsumer for Engine {
     fn finalize_cell(&mut self, builder: BuilderData) -> Result<Cell> {
         self.use_gas(Gas::finalize_price());
-        builder.into_cell()
+        builder
+            .finalize(1024)
+            .map_err(|err| exception!(ExceptionCode::CellOverflow, "too deep cell creation: {}", err))
     }
     fn load_cell(&mut self, cell: Cell) -> Result<SliceData> {
         self.load_hashed_cell(cell, true)
@@ -135,6 +137,10 @@ impl GasConsumer for Engine {
         let cell = self.finalize_cell(builder)?;
         self.load_hashed_cell(cell, true)
     }
+}
+
+lazy_static::lazy_static! {
+    static ref HANDLERS_CP0: Handlers = Handlers::new_code_page_0();
 }
 
 impl Engine {
@@ -175,7 +181,7 @@ impl Engine {
             libraries: Vec::new(),
             visited_cells: HashSet::new(),
             cstate: CommittedState::new_empty(),
-            handlers: Handlers::new_code_page_0(),
+            handlers: HANDLERS_CP0.clone(),
             time: 0,
             gas: Gas::empty(),
             code_page: 0,
@@ -336,15 +342,6 @@ impl Engine {
     }
 
     pub fn execute(&mut self) -> Result<i32> {
-        // patch for MYCODE
-        let code_cell = StackItem::cell(self.cc.code().cell().clone());
-        if let Ok(c7) = self.ctrl_mut(7) {
-            if c7.as_tuple()?.len() == 9 {
-                let mut new_c7 = c7.as_tuple_mut()?;
-                new_c7.push(code_cell);
-                *c7 = StackItem::tuple(new_c7);
-            }
-        }
         self.trace_info(EngineTraceInfoType::Start, 0, None);
         let result = loop {
             if let Some(result) = self.seek_next_cmd()? {
@@ -452,7 +449,7 @@ impl Engine {
         }
         Ok(None)
     }
-    fn step_unil_loop(&mut self, body: SliceData) -> Result<Option<i32>> {
+    fn step_until_loop(&mut self, body: SliceData) -> Result<Option<i32>> {
         match self.check_until_loop_condition() {
             Ok(true) => {
                 self.log_string = Some("NEXT UNTIL ITERATION");
@@ -498,7 +495,7 @@ impl Engine {
                     ContinuationType::TryCatch => self.step_try_catch(),
                     ContinuationType::WhileLoopCondition(body, cond) => self.step_while_loop(body, cond),
                     ContinuationType::RepeatLoopBody(code, _counter) => self.step_repeat_loop(code),
-                    ContinuationType::UntilLoopCondition(body) => self.step_unil_loop(body),
+                    ContinuationType::UntilLoopCondition(body) => self.step_until_loop(body),
                     ContinuationType::AgainLoopBody(slice) => self.step_again_loop(slice),
                 }
             };
@@ -638,17 +635,13 @@ impl Engine {
             self.cc.stack = stack;
         }
         self.gas = gas.unwrap_or(Gas::test());
-        self.ctrls.put(0, &mut StackItem::Continuation(Arc::new(ContinuationData::with_type(
-            ContinuationType::Quit(ExceptionCode::NormalTermination as i32)
-        )))).unwrap();
-        self.ctrls.put(1, &mut StackItem::Continuation(Arc::new(ContinuationData::with_type(
-            ContinuationType::Quit(ExceptionCode::AlternativeTermination as i32)
-        )))).unwrap();
-        self.ctrls.put(3, &mut StackItem::Continuation(Arc::new(
-            ContinuationData::with_code(code)
-        ))).unwrap();
-        self.ctrls.put(4, &mut StackItem::Cell(BuilderData::default().into())).unwrap();
-        self.ctrls.put(5, &mut StackItem::Cell(BuilderData::default().into())).unwrap();
+        let cont = ContinuationType::Quit(ExceptionCode::NormalTermination as i32);
+        self.ctrls.put(0, &mut StackItem::continuation(ContinuationData::with_type(cont))).unwrap();
+        let cont = ContinuationType::Quit(ExceptionCode::AlternativeTermination as i32);
+        self.ctrls.put(1, &mut StackItem::continuation(ContinuationData::with_type(cont))).unwrap();
+        self.ctrls.put(3, &mut StackItem::continuation(ContinuationData::with_code(code))).unwrap();
+        self.ctrls.put(4, &mut StackItem::cell(Cell::default())).unwrap();
+        self.ctrls.put(5, &mut StackItem::cell(Cell::default())).unwrap();
         self.ctrls.put(7, &mut SmartContractInfo::default().into_temp_data()).unwrap();
         if let Some(ref mut ctrls) = ctrls {
             self.apply_savelist(ctrls).unwrap();
